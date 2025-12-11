@@ -300,4 +300,4 @@ func deregisterNacos() {
 			log.Println("Deregistered from Nacos")
 		}
 	}
-}1
+}
