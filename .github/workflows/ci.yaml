@@ -1,4 +1,4 @@
-name: Build and Push to AWS ECR
+name: Build and Push to Aliyun ACR
 
 on:
   push:
@@ -6,18 +6,9 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  AWS_REGION: ap-northeast-1  # 设置你的 AWS 区域
-  ECR_REPOSITORY: login-backend  # 你的 ECR 仓库名称
-  IMAGE_TAG: latest
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write  # 这是 OIDC 身份验证所必需的
-      contents: read
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,48 +18,39 @@ jobs:
         with:
           go-version: '1.24'
 
+      # 安装 swag 并生成 docs 目录（关键步骤）
       - name: Install Swag CLI
         run: go install github.com/swaggo/swag/cmd/swag@latest
 
       - name: Generate Swagger Docs
-        run: swag init -g main.go
+        run: swag init -g main.go  # 确保与你的 main.go 路径匹配
 
       - name: Build optimized binary
         run: |
           CGO_ENABLED=0 GOOS=linux go build \
             -ldflags="-s -w" \
-            -o user-service \
+            -o login-backend \
             ./main.go
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Login to Aliyun Container Registry (ACR)
+        uses: docker/login-action@v3
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          registry: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          mask-password: true
-
-      - name: Get ECR repository URI
-        id: ecr
-        run: |
-          echo "repository_uri=$(aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --query 'repositories[0].repositoryUri' --output text)" >> $GITHUB_OUTPUT
-
-      - name: Build and push Docker image
+      - name: Build and push optimized image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ steps.ecr.outputs.repository_uri }}:${{ env.IMAGE_TAG }}
-            ${{ steps.ecr.outputs.repository_uri }}:${{ github.sha }}
+            ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/login-backend:latest
+            ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/login-backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
